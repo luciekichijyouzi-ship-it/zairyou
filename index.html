@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Rita 材料発注・予算管理</title>
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=">
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<meta name="apple-mobile-web-app-title" content="Rita材料発注" />
+<style>
+  html,body{margin:0;padding:0;background:#F4F6F5;-webkit-tap-highlight-color:transparent;}
+  *{box-sizing:border-box;}
+  button{cursor:pointer;font-family:inherit;}
+  input{font-family:inherit;}
+  @media print { .no-print{display:none!important} .print-area{display:block!important} }
+  .print-area{display:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+/* ============================================================
+   株式会社Rita 材料発注・予算管理アプリ v3 (店舗別対応・Web配布版)
+   - 店舗ごとに予算設定・発注履歴を分離(表参道/自由ヶ丘/吉祥寺)
+   - 商品マスタ・業者は全店舗共通(発注先が同じため一元管理)
+   - データ保存: このブラウザのlocalStorageに保存されます
+     (店舗のiPad/iPhoneに保存する場合、そのデバイス内にのみ保存される点にご注意ください。
+      複数端末でリアルタイム共有したい場合はクラウドDB連携が必要です)
+   ============================================================ */
+
+const ACCENT = "#1E5C4A";
+const WARN = "#C77B2E";
+const DANGER = "#B3402E";
+const C = {
+  bg: "#F4F6F5", card: "#FFFFFF", ink: "#17201C",
+  sub: "#6B7A73", line: "#E2E8E5", soft: "#E7F0EC",
+};
+const TAX = 0.10;
+const yen = (n) => "¥" + Math.round(n).toLocaleString("ja-JP");
+
+/* ---------- 初期マスタ(2026年6月請求書より抽出・税抜単価) ---------- */
+let _id = 0;
+const P = (name, price) => ({ id: "p" + (++_id), name, price });
+
+const LF_SHADES = ["N4","N6","N8","N10","N12","N14","B6","B12","MT6","MT12","A6","A8","A10","A14","BA6","BA10","BA12","BA14","M6","M10","M12","FBe6","FBe10","FBe12","Be6","Be8","Be10","Be12","Ch6","Ch8","Ch12","Co10","R8","R10","P6","P10","P12","BP6","V8","V10","クリア"];
+const LG_SHADES = ["2NB","4NB","6AB","6MB","8NB"];
+const ILLUMINA = ["アース4","アース8","アース12","トワイライト6","オーキッド6","オーキッド12","サファリ6","サファリ10","サファリ12","オーシャン6","オーシャン10","オーシャン12","フォレスト6","フォレスト10","フォレスト12","ヌード6","ヌード12","ムーンライト6","ムーンライト12","ブロッサム6","ブロッサム10","ブロッサム12","サンライト","シャドウ","ライトニング"];
+const ADDICTHY = ["3-GP","5-SI","9-SI","13-SI","5-ST","9-ST","13-ST","5-nSD","9-nSD","13-nSD","5-CB","9-CB","13-CB","13-PG"];
+const ORD_ADD = ["3-BOR","7-BOR","13-BOR","5-SAM","9-SAM","13-SAM","5-LEP","13-LEP"];
+const CARADECO = ["D navy/dk","D gray/dk","b black/dk","White/l","A red/a","A orange/a","A green/a","A blue/a","A purple/a","A pink/a","beige/l","P beige/l","TN-UP-High"];
+
+function buildInitProducts() {
+  return {
+    v1: [ // プレッシュ+東和
+      ...LG_SHADES.map((s) => P(`ラスタグレイカラー LG-${s} 120g`, 280)),
+      ...LF_SHADES.map((s) => P(`ラスタファッションカラー LF-${s} 120g`, 280)),
+      P("ティアーズ デベロッパー 2L 3%", 500),
+      P("ティアーズ デベロッパー 2L 6%", 500),
+      ...ILLUMINA.map((s) => P(`イルミナカラー ${s} 80g`, 640)),
+      P("イルミナクリームディベロッパー 3% 1000mL", 900),
+      P("イルミナクリームディベロッパー 6% 1000mL", 900),
+      P("イルミナ ライトニングブースター 200g", 2200),
+      ...CARADECO.map((s) => P(`Nキャラデコ 80g ${s}`, 270)),
+      P("ファイバーグルーカラー 120g 4-GNB", 270),
+      P("ファイバーグルーカラー 120g 8-GNB", 270),
+      ...ADDICTHY.map((s) => P(`アディクシー 80g ${s}`, 450)),
+      ...ORD_ADD.map((s) => P(`ORDアディクシー ${s}`, 450)),
+      P("エノグ P-オフブラック", 450),
+      P("ナプラ N.アシッドカラー 190g", 570),
+      P("ナプラ N.ルフレカラー", 400),
+      P("ナプラ アクセスフリー パウダーブリーチ 500g", 1740),
+      P("アリミノ ブリーチ120 500g", 2660),
+      P("ルシケア アクア OX 800ml", 800),
+      P("ロレアル イノア 60g(各色)", 540),
+      P("ロレアル イノア オキシダンクレーム 6% 1000mL", 923),
+      P("アリミノ クオライン T-C 250 1剤 N2", 1155),
+      P("アリミノ クオライン T-C 80 1剤 N2", 1155),
+      P("アリミノ クオライン T-C 50 1剤", 1386),
+      P("アリミノ クオライン CA-C 130 1剤 N2", 1386),
+      P("アリミノ クオライン CA-C 110 1剤", 1386),
+      P("パイモア グラッツ G48エッセンス 100g", 1667),
+      P("パイモア グラッツ R33エッセンス 60g", 3500),
+      P("パイモア グラッツ C-0 クリームN 1000g", 1680),
+      P("パイモア グラッツ C-1.5 クリームN 1000g", 1680),
+      P("パイモア グラッツ C-5.6 クリームN 400g", 1400),
+      P("パイモア グラッツ L-0 ローションN 1000g", 1680),
+      P("パイモア グラッツ ミルクエマルジョン 300g", 1791),
+      P("パイモア グラッツ ミルクエマルジョン 480g", 2184),
+      P("アリミノ コスメカール EX 400ml", 700),
+      P("アリミノ コスメカール M 400ml", 700),
+      P("アリミノ コスメカール H 400ml", 700),
+      P("アリミノ コスメカール V 320ml", 840),
+      P("ティアーズ レクタスストレート SH", 550),
+      P("ティアーズ レクタスストレート M", 550),
+      P("ティアーズ レクタスストレート AC6.5", 764),
+      P("ティアーズ レクタスストレート CA/TG", 764),
+      P("シェルパ クローズキープマスク 1000g", 2352),
+      P("シェルパ ベースエイドミスト 800ml", 1470),
+      P("トリキュア ベースM 500ml", 2240),
+      P("トリキュア AK 500ml", 2730),
+      P("トリキュア 1M 500g", 3780),
+      P("トリキュア 2 500g", 3780),
+      P("アルタイム リペア ミラクルヘアトリートメント 95ml", 1900),
+      P("キャラデコ プロテクトクリーム 155g", 1000),
+      P("プレックスメント リラクシングボンドA ゲル 480g", 2000),
+      P("ファイバープレックス ボンドオイル 150ml", 2000),
+      P("ミルボン カラーリムーバー 250ml", 800),
+      P("サボニーズ フェイスフィット 150枚入", 320),
+      P("teacos ヘアオイル 100ml", 2200),
+      P("teacos バーム 40g", 1900),
+      P("ディープリボーンケアパック 75g モイスト", 420),
+      P("シーランドピューノテティ ハンドクリーム 65g", 144),
+      P("GL ヴェロアリュクスTR 50g", 160),
+      P("ナノサプリシャンプー プレミアムレモンティー 1L", 680),
+      P("資生堂PME アルティストカラー", 450),
+      P("カットウィッグ G-04", 2600),
+    ],
+    v2: [ // ダリア(請求書は店舗別合計のみのため単価未設定。マスタタブから追加してください)
+      P("ESTABLISHED ヘアケア(店販) ※単価要設定", 0),
+    ],
+    v3: [ // ベルコム
+      P("トキオ INKARAMI N 0 1000ml", 6800),
+      P("トキオ INKARAMI N 1 1000ml", 6800),
+      P("トキオ INKARAMI N 2M 1000g", 6800),
+      P("トキオ INKARAMI N 3M 1000g", 6800),
+      P("トキオ INKARAMI N 4M 250g", 3700),
+      P("TOKIO インカラミ 2M 酸熱システムトリートメントN 1000g", 7200),
+      P("INKARAMI 2M専用ハードケース クリア", 420),
+      P("INKARAMI 専用ポンプ", 120),
+      P("フィヨーレ プロシャンプー 5000ml", 3850),
+      P("フィヨーレ プロトリートメント 5000g", 3850),
+    ],
+  };
+}
+const initVendors = [
+  { id: "v1", name: "プレッシュ+東和" },
+  { id: "v2", name: "ダリア" },
+  { id: "v3", name: "ベルコム" },
+];
+const initStores = [
+  { id: "s1", name: "表参道" },
+  { id: "s2", name: "自由ヶ丘" },
+  { id: "s3", name: "吉祥寺" },
+];
+const defaultStoreSettings = () => ({ salesForecast: 11000000, ratio: 8, blockStarts: [1, 8, 15, 23] });
+
+/* ---------- 週ブロック計算 ---------- */
+function getBlocks(starts, daysInMonth) {
+  let s = (starts || []).map(Number).filter((x) => x >= 1 && x <= daysInMonth);
+  s = [...new Set(s)].sort((a, b) => a - b);
+  if (s.length === 0 || s[0] !== 1) s.unshift(1);
+  s = [...new Set(s)];
+  return s.map((st, i) => ({
+    start: st,
+    end: i < s.length - 1 ? s[i + 1] - 1 : daysInMonth,
+  }));
+}
+const PRESETS = {
+  "4分割(推奨)": [1, 8, 15, 23],
+  "5分割(推奨)": [1, 7, 13, 19, 25],
+  "7日ごと": [1, 8, 15, 22, 29],
+};
+
+/* ---------- localStorage永続化ヘルパー ---------- */
+const STORAGE_KEY = "rita-app-web-v1";
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+function saveState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function RitaMaterialApp() {
+  const [tab, setTab] = useState("order");
+  const [vendors, setVendors] = useState(initVendors);
+  const [products, setProducts] = useState(buildInitProducts());
+  const [stores, setStores] = useState(initStores);
+  const [currentStore, setCurrentStore] = useState("s1");
+  const [orders, setOrders] = useState({ s1: [], s2: [], s3: [] });
+  const [storeSettings, setStoreSettings] = useState({ s1: defaultStoreSettings(), s2: defaultStoreSettings(), s3: defaultStoreSettings() });
+  const [cart, setCart] = useState({});
+  const [activeVendor, setActiveVendor] = useState("v1");
+  const [masterVendor, setMasterVendor] = useState("v1");
+  const [search, setSearch] = useState("");
+  const [newProd, setNewProd] = useState({ name: "", price: "" });
+  const [newVendor, setNewVendor] = useState("");
+  const [newStore, setNewStore] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    const d = loadState();
+    if (d) {
+      if (d.vendors?.length) setVendors(d.vendors);
+      if (d.products) setProducts(d.products);
+      if (d.stores?.length) { setStores(d.stores); setCurrentStore(d.stores[0].id); }
+      if (d.orders) setOrders(d.orders);
+      if (d.storeSettings) setStoreSettings(d.storeSettings);
+      if (d.vendors?.length) { setActiveVendor(d.vendors[0].id); setMasterVendor(d.vendors[0].id); }
+    }
+    setLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    saveState({ vendors, products, stores, orders, storeSettings });
+  }, [vendors, products, stores, orders, storeSettings, loaded]);
+
+  const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
+
+  const settings = storeSettings[currentStore] || defaultStoreSettings();
+  const setSettings = (updater) =>
+    setStoreSettings((ss) => ({ ...ss, [currentStore]: typeof updater === "function" ? updater(ss[currentStore] || defaultStoreSettings()) : updater }));
+  const storeOrders = orders[currentStore] || [];
+  const setStoreOrders = (updater) =>
+    setOrders((os) => ({ ...os, [currentStore]: typeof updater === "function" ? updater(os[currentStore] || []) : updater }));
+
+  /* ---------- 予算計算 ---------- */
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const blocks = getBlocks(settings.blockStarts, daysInMonth);
+  const bi = Math.max(0, blocks.findIndex((b) => now.getDate() >= b.start && now.getDate() <= b.end));
+  const monthlyLimit = (Number(settings.salesForecast) || 0) * ((Number(settings.ratio) || 0) / 100);
+  const blockLimit = (b) => (monthlyLimit * (b.end - b.start + 1)) / daysInMonth;
+  const weeklyLimit = blocks[bi] ? blockLimit(blocks[bi]) : 0;
+
+  const monthOrders = storeOrders.filter((o) => {
+    const d = new Date(o.date);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const spentIn = (b) =>
+    monthOrders
+      .filter((o) => { const dd = new Date(o.date).getDate(); return dd >= b.start && dd <= b.end; })
+      .reduce((s, o) => s + o.totalInc, 0);
+  const monthSpent = monthOrders.reduce((s, o) => s + o.totalInc, 0);
+  const weekSpent = blocks[bi] ? spentIn(blocks[bi]) : 0;
+
+  /* ---------- カート ---------- */
+  const allProducts = vendors.flatMap((v) => (products[v.id] || []).map((p) => ({ ...p, vendorId: v.id, vendorName: v.name })));
+  const cartItems = allProducts.filter((p) => cart[p.id] > 0).map((p) => ({ ...p, qty: cart[p.id] }));
+  const cartEx = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const cartInc = Math.round(cartEx * (1 + TAX));
+  const weekPctNow = weeklyLimit > 0 ? (weekSpent / weeklyLimit) * 100 : 0;
+  const weekPctAfter = weeklyLimit > 0 ? ((weekSpent + cartInc) / weeklyLimit) * 100 : 0;
+  const gaugeColor = (pct) => (pct >= 100 ? DANGER : pct >= 80 ? WARN : ACCENT);
+  const setQty = (id, d) => setCart((c) => ({ ...c, [id]: Math.max(0, (c[id] || 0) + d) }));
+
+  const storeName = stores.find((s) => s.id === currentStore)?.name || "";
+
+  /* ---------- 発注・LINE・PDF ---------- */
+  const orderText = () => {
+    const lines = [`【材料発注書】${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} 株式会社Rita ${storeName}`];
+    vendors.forEach((v) => {
+      const items = cartItems.filter((i) => i.vendorId === v.id);
+      if (items.length === 0) return;
+      lines.push(`\n■ ${v.name} 御中`);
+      items.forEach((i) => lines.push(`・${i.name} ×${i.qty}　${yen(i.price * i.qty)}(税抜)`));
+    });
+    lines.push(`\n----------------`, `税抜合計: ${yen(cartEx)}`, `税込合計: ${yen(cartInc)}(消費税10%)`);
+    return lines.join("\n");
+  };
+  const confirmOrder = () => {
+    if (cartItems.length === 0) return;
+    setStoreOrders((o) => [{ date: now.toISOString(), items: cartItems.map(({ id, name, price, qty, vendorName }) => ({ id, name, price, qty, vendorName })), totalEx: cartEx, totalInc: cartInc }, ...o]);
+    setCart({});
+    showToast("発注を記録しました");
+  };
+  const sendLine = () => window.open("https://line.me/R/share?text=" + encodeURIComponent(orderText()), "_blank");
+  const printPDF = () => window.print();
+
+  /* ---------- マスタ操作(全店舗共通) ---------- */
+  const updateProduct = (vid, pid, patch) =>
+    setProducts((ps) => ({ ...ps, [vid]: (ps[vid] || []).map((p) => (p.id === pid ? { ...p, ...patch } : p)) }));
+  const moveProduct = (vid, idx, dir) =>
+    setProducts((ps) => {
+      const list = [...(ps[vid] || [])];
+      const j = idx + dir;
+      if (j < 0 || j >= list.length) return ps;
+      [list[idx], list[j]] = [list[j], list[idx]];
+      return { ...ps, [vid]: list };
+    });
+  const deleteProduct = (vid, pid) =>
+    setProducts((ps) => ({ ...ps, [vid]: (ps[vid] || []).filter((p) => p.id !== pid) }));
+  const addProduct = () => {
+    if (!newProd.name.trim() || newProd.price === "") return;
+    setProducts((ps) => ({
+      ...ps,
+      [masterVendor]: [...(ps[masterVendor] || []), { id: "p" + Date.now() + Math.floor(Math.random() * 1000), name: newProd.name.trim(), price: Number(newProd.price) }],
+    }));
+    setNewProd({ name: "", price: "" });
+    showToast("商品を追加しました");
+  };
+  const addVendor = () => {
+    if (!newVendor.trim()) return;
+    const id = "v" + Date.now();
+    setVendors((vs) => [...vs, { id, name: newVendor.trim() }]);
+    setProducts((ps) => ({ ...ps, [id]: [] }));
+    setNewVendor("");
+    showToast("業者を追加しました");
+  };
+  const renameVendor = (id, name) => setVendors((vs) => vs.map((v) => (v.id === id ? { ...v, name } : v)));
+  const deleteVendor = (id) => {
+    if (vendors.length <= 1) { showToast("業者は最低1つ必要です"); return; }
+    if (!window.confirm("この業者と商品マスタを削除しますか?")) return;
+    setVendors((vs) => vs.filter((v) => v.id !== id));
+    setProducts((ps) => { const n = { ...ps }; delete n[id]; return n; });
+    const rest = vendors.filter((v) => v.id !== id);
+    if (activeVendor === id) setActiveVendor(rest[0].id);
+    if (masterVendor === id) setMasterVendor(rest[0].id);
+  };
+
+  /* ---------- 店舗操作 ---------- */
+  const addStore = () => {
+    if (!newStore.trim()) return;
+    const id = "s" + Date.now();
+    setStores((ss) => [...ss, { id, name: newStore.trim() }]);
+    setOrders((o) => ({ ...o, [id]: [] }));
+    setStoreSettings((ss) => ({ ...ss, [id]: defaultStoreSettings() }));
+    setNewStore("");
+    showToast("店舗を追加しました");
+  };
+  const renameStore = (id, name) => setStores((ss) => ss.map((s) => (s.id === id ? { ...s, name } : s)));
+  const deleteStore = (id) => {
+    if (stores.length <= 1) { showToast("店舗は最低1つ必要です"); return; }
+    if (!window.confirm("この店舗の予算設定・発注履歴も削除されます。よろしいですか?")) return;
+    setStores((ss) => ss.filter((s) => s.id !== id));
+    setOrders((o) => { const n = { ...o }; delete n[id]; return n; });
+    setStoreSettings((ss) => { const n = { ...ss }; delete n[id]; return n; });
+    if (currentStore === id) setCurrentStore(stores.filter((s) => s.id !== id)[0].id);
+  };
+
+  /* ---------- 週区切り設定 ---------- */
+  const setBlockStart = (i, val) => {
+    const s = [...settings.blockStarts];
+    s[i] = Number(val) || 1;
+    setSettings((st) => ({ ...st, blockStarts: s }));
+  };
+  const addBlock = () => setSettings((st) => ({ ...st, blockStarts: [...st.blockStarts, Math.min(daysInMonth, (st.blockStarts[st.blockStarts.length - 1] || 1) + 7)] }));
+  const removeBlock = (i) => setSettings((st) => ({ ...st, blockStarts: st.blockStarts.filter((_, x) => x !== i) }));
+
+  const inp = { width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${C.line}`, fontSize: 15, boxSizing: "border-box", fontFamily: "inherit" };
+  const filteredOrder = (products[activeVendor] || []).filter((p) => !search || p.name.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div style={{ fontFamily: "'Hiragino Sans','Noto Sans JP',sans-serif", background: C.bg, minHeight: "100vh", color: C.ink, maxWidth: 480, margin: "0 auto", paddingBottom: 92 }}>
+      <div className="no-print" style={{ padding: "20px 20px 6px" }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.18em", color: ACCENT, fontWeight: 700 }}>RITA / HENRIETTA</div>
+        <div style={{ fontSize: 21, fontWeight: 800 }}>材料発注・予算管理</div>
+      </div>
+
+      {/* 店舗切替バー(常時表示) */}
+      <div className="no-print" style={{ padding: "0 14px 10px", display: "flex", gap: 6, overflowX: "auto" }}>
+        {stores.map((s) => (
+          <button key={s.id} onClick={() => setCurrentStore(s.id)}
+            style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 999, border: currentStore === s.id ? "none" : `1px solid ${C.line}`, background: currentStore === s.id ? C.ink : "#fff", color: currentStore === s.id ? "#fff" : C.sub, fontSize: 12.5, fontWeight: 700 }}>
+            {s.name}
+          </button>
+        ))}
+      </div>
+
+      {/* ================= 発注 ================= */}
+      {tab === "order" && (
+        <div className="no-print" style={{ padding: "0 14px" }}>
+          <div style={{ background: C.card, borderRadius: 16, padding: 14, border: `1px solid ${C.line}`, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.sub }}>
+              <span>{storeName}／今週 {now.getMonth() + 1}/{blocks[bi]?.start}〜{blocks[bi]?.end}</span>
+              <span>リミット {yen(weeklyLimit)}</span>
+            </div>
+            <div style={{ height: 14, background: C.soft, borderRadius: 7, marginTop: 8, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", inset: 0, width: `${Math.min(100, weekPctAfter)}%`, background: gaugeColor(weekPctAfter), opacity: 0.35, transition: "width .3s" }} />
+              <div style={{ position: "absolute", inset: 0, width: `${Math.min(100, weekPctNow)}%`, background: gaugeColor(weekPctNow), transition: "width .3s" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 13, fontWeight: 700 }}>
+              <span style={{ color: gaugeColor(weekPctNow) }}>使用済 {weekPctNow.toFixed(1)}%</span>
+              {cartInc > 0 && <span style={{ color: gaugeColor(weekPctAfter) }}>発注後 → {weekPctAfter.toFixed(1)}%</span>}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+            {vendors.map((v) => {
+              const cnt = cartItems.filter((i) => i.vendorId === v.id).reduce((s, i) => s + i.qty, 0);
+              return (
+                <button key={v.id} onClick={() => setActiveVendor(v.id)}
+                  style={{ flexShrink: 0, padding: "8px 14px", borderRadius: 999, border: activeVendor === v.id ? "none" : `1px solid ${C.line}`, background: activeVendor === v.id ? ACCENT : "#fff", color: activeVendor === v.id ? "#fff" : C.ink, fontSize: 13, fontWeight: 700 }}>
+                  {v.name}{cnt > 0 ? ` (${cnt})` : ""}
+                </button>
+              );
+            })}
+          </div>
+
+          <input placeholder="商品名で検索" value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...inp, marginBottom: 10 }} />
+
+          {filteredOrder.length === 0 && <div style={{ color: C.sub, fontSize: 13, textAlign: "center", padding: 24 }}>商品がありません。マスタタブから追加してください。</div>}
+          {filteredOrder.map((p) => (
+            <div key={p.id} style={{ background: C.card, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.line}`, marginBottom: 7, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5, lineHeight: 1.35 }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: C.sub }}>{yen(p.price)} 税抜 / {yen(p.price * (1 + TAX))} 税込</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <button onClick={() => setQty(p.id, -1)} style={{ width: 34, height: 34, borderRadius: 10, border: `1px solid ${C.line}`, background: "#fff", fontSize: 18 }}>−</button>
+                <div style={{ width: 24, textAlign: "center", fontWeight: 700 }}>{cart[p.id] || 0}</div>
+                <button onClick={() => setQty(p.id, +1)} style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: ACCENT, color: "#fff", fontSize: 18 }}>＋</button>
+              </div>
+            </div>
+          ))}
+
+          {cartItems.length > 0 && (
+            <div style={{ position: "sticky", bottom: 78, background: C.ink, color: "#fff", borderRadius: 16, padding: 14, marginTop: 12, boxShadow: "0 8px 24px rgba(0,0,0,.25)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, opacity: 0.8 }}>
+                <span>{cartItems.length}品目 / 税抜 {yen(cartEx)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 19, fontWeight: 800, marginTop: 2 }}>
+                <span>税込合計</span><span>{yen(cartInc)}</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button onClick={sendLine} style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "none", background: "#06C755", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>LINEで送信</button>
+                <button onClick={printPDF} style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid #ffffff44", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>PDF保存</button>
+                <button onClick={confirmOrder} style={{ flex: 1.2, padding: "11px 0", borderRadius: 12, border: "none", background: ACCENT, color: "#fff", fontWeight: 700, fontSize: 13.5 }}>発注を記録</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= 予算 ================= */}
+      {tab === "budget" && (
+        <div className="no-print" style={{ padding: "0 14px" }}>
+          <div style={{ background: C.card, borderRadius: 16, padding: 14, border: `1px solid ${C.line}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>{storeName} の今月設定</div>
+            <label style={{ fontSize: 12, color: C.sub }}>月次売上予測(円)</label>
+            <input type="number" value={settings.salesForecast} onChange={(e) => setSettings((s) => ({ ...s, salesForecast: Number(e.target.value) }))} style={{ ...inp, margin: "4px 0 10px" }} />
+            <label style={{ fontSize: 12, color: C.sub }}>材料比率(%)</label>
+            <input type="number" step="0.1" value={settings.ratio} onChange={(e) => setSettings((s) => ({ ...s, ratio: Number(e.target.value) }))} style={{ ...inp, marginTop: 4 }} />
+          </div>
+
+          <div style={{ background: ACCENT, color: "#fff", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>{storeName}／今月の材料費リミット(税込想定)</div>
+            <div style={{ fontSize: 27, fontWeight: 800 }}>{yen(monthlyLimit)}</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              使用済 {yen(monthSpent)}({monthlyLimit > 0 ? ((monthSpent / monthlyLimit) * 100).toFixed(1) : 0}%) / 残り {yen(monthlyLimit - monthSpent)}
+            </div>
+          </div>
+
+          <div style={{ background: C.card, borderRadius: 16, padding: 14, border: `1px solid ${C.line}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>週の区切り設定(4〜5分割を推奨)</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+              {Object.entries(PRESETS).map(([label, starts]) => (
+                <button key={label} onClick={() => setSettings((s) => ({ ...s, blockStarts: starts }))}
+                  style={{ padding: "7px 12px", borderRadius: 999, border: `1px solid ${C.line}`, background: JSON.stringify(settings.blockStarts) === JSON.stringify(starts) ? ACCENT : "#fff", color: JSON.stringify(settings.blockStarts) === JSON.stringify(starts) ? "#fff" : C.ink, fontSize: 12.5, fontWeight: 700 }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: C.sub, marginBottom: 6 }}>各期間の開始日(カスタマイズ可)</div>
+            {settings.blockStarts.map((s, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 12.5, width: 62, color: C.sub }}>第{i + 1}期間</span>
+                <input type="number" min="1" max={daysInMonth} value={s} onChange={(e) => setBlockStart(i, e.target.value)} style={{ ...inp, width: 80, padding: 8 }} />
+                <span style={{ fontSize: 12.5, color: C.sub }}>日〜</span>
+                {settings.blockStarts.length > 2 && i > 0 && (
+                  <button onClick={() => removeBlock(i)} style={{ border: "none", background: "transparent", color: DANGER, fontSize: 12.5, fontWeight: 600 }}>削除</button>
+                )}
+              </div>
+            ))}
+            <button onClick={addBlock} style={{ marginTop: 4, padding: "8px 14px", borderRadius: 10, border: `1px dashed ${ACCENT}`, background: "transparent", color: ACCENT, fontSize: 12.5, fontWeight: 700 }}>＋ 区切りを追加</button>
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 700, margin: "0 2px 8px" }}>期間ごとのリミットと使用状況</div>
+          {blocks.map((b, i) => {
+            const lim = blockLimit(b);
+            const spent = spentIn(b);
+            const pct = lim > 0 ? (spent / lim) * 100 : 0;
+            return (
+              <div key={i} style={{ background: C.card, borderRadius: 12, padding: "11px 13px", border: i === bi ? `2px solid ${ACCENT}` : `1px solid ${C.line}`, marginBottom: 7 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <span style={{ fontWeight: 700 }}>{now.getMonth() + 1}/{b.start}〜{b.end}{i === bi ? "(今週)" : ""}</span>
+                  <span style={{ color: gaugeColor(pct), fontWeight: 700 }}>{pct.toFixed(1)}%</span>
+                </div>
+                <div style={{ height: 8, background: C.soft, borderRadius: 4, marginTop: 6, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.min(100, pct)}%`, background: gaugeColor(pct) }} />
+                </div>
+                <div style={{ fontSize: 12, color: C.sub, marginTop: 5 }}>{yen(spent)} / リミット {yen(lim)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ================= マスタ ================= */}
+      {tab === "master" && (
+        <div className="no-print" style={{ padding: "0 14px" }}>
+          {/* 店舗管理 */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 14, border: `1px solid ${C.line}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>店舗(名前変更・追加・削除)</div>
+            {stores.map((s) => (
+              <div key={s.id} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                <input value={s.name} onChange={(e) => renameStore(s.id, e.target.value)} style={{ ...inp, padding: 8 }} />
+                <button onClick={() => deleteStore(s.id)} style={{ border: "none", background: "transparent", color: DANGER, fontSize: 12.5, fontWeight: 600, flexShrink: 0 }}>削除</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <input placeholder="新しい店舗名" value={newStore} onChange={(e) => setNewStore(e.target.value)} style={{ ...inp, padding: 8 }} />
+              <button onClick={addStore} style={{ padding: "0 16px", borderRadius: 10, border: "none", background: C.ink, color: "#fff", fontWeight: 700, flexShrink: 0 }}>追加</button>
+            </div>
+            <div style={{ fontSize: 11.5, color: C.sub, marginTop: 8 }}>※ 各店舗は予算設定・発注履歴が個別に管理されます。商品マスタ・業者は全店舗共通です。</div>
+          </div>
+
+          {/* 業者管理 */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 14, border: `1px solid ${C.line}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>業者(全店舗共通・名前変更・追加・削除)</div>
+            {vendors.map((v) => (
+              <div key={v.id} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                <input value={v.name} onChange={(e) => renameVendor(v.id, e.target.value)} style={{ ...inp, padding: 8 }} />
+                <button onClick={() => deleteVendor(v.id)} style={{ border: "none", background: "transparent", color: DANGER, fontSize: 12.5, fontWeight: 600, flexShrink: 0 }}>削除</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <input placeholder="新しい業者名" value={newVendor} onChange={(e) => setNewVendor(e.target.value)} style={{ ...inp, padding: 8 }} />
+              <button onClick={addVendor} style={{ padding: "0 16px", borderRadius: 10, border: "none", background: ACCENT, color: "#fff", fontWeight: 700, flexShrink: 0 }}>追加</button>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+            {vendors.map((v) => (
+              <button key={v.id} onClick={() => setMasterVendor(v.id)}
+                style={{ flexShrink: 0, padding: "8px 14px", borderRadius: 999, border: masterVendor === v.id ? "none" : `1px solid ${C.line}`, background: masterVendor === v.id ? ACCENT : "#fff", color: masterVendor === v.id ? "#fff" : C.ink, fontSize: 13, fontWeight: 700 }}>
+                {v.name} ({(products[v.id] || []).length})
+              </button>
+            ))}
+          </div>
+
+          <div style={{ background: C.card, borderRadius: 16, padding: 14, border: `1px solid ${C.line}`, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>商品を追加 → {vendors.find((v) => v.id === masterVendor)?.name}</div>
+            <input placeholder="商品名" value={newProd.name} onChange={(e) => setNewProd((p) => ({ ...p, name: e.target.value }))} style={{ ...inp, marginBottom: 8 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input placeholder="税抜単価" type="number" value={newProd.price} onChange={(e) => setNewProd((p) => ({ ...p, price: e.target.value }))} style={inp} />
+              <button onClick={addProduct} style={{ padding: "0 18px", borderRadius: 10, border: "none", background: ACCENT, color: "#fff", fontWeight: 700, flexShrink: 0 }}>追加</button>
+            </div>
+          </div>
+
+          {(products[masterVendor] || []).map((p, idx, arr) => (
+            <div key={p.id} style={{ background: C.card, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.line}`, marginBottom: 7 }}>
+              <input value={p.name} onChange={(e) => updateProduct(masterVendor, p.id, { name: e.target.value })} style={{ ...inp, padding: 8, fontSize: 13.5, marginBottom: 6 }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="number" value={p.price} onChange={(e) => updateProduct(masterVendor, p.id, { price: Number(e.target.value) })} style={{ ...inp, width: 100, padding: 8 }} />
+                <span style={{ fontSize: 12, color: C.sub, flex: 1 }}>税抜 / 税込 {yen(p.price * (1 + TAX))}</span>
+                <button onClick={() => moveProduct(masterVendor, idx, -1)} disabled={idx === 0} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.line}`, background: "#fff", opacity: idx === 0 ? 0.3 : 1 }}>↑</button>
+                <button onClick={() => moveProduct(masterVendor, idx, +1)} disabled={idx === arr.length - 1} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.line}`, background: "#fff", opacity: idx === arr.length - 1 ? 0.3 : 1 }}>↓</button>
+                <button onClick={() => deleteProduct(masterVendor, p.id)} style={{ border: "none", background: "transparent", color: DANGER, fontSize: 12.5, fontWeight: 600 }}>削除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ================= 履歴 ================= */}
+      {tab === "history" && (
+        <div className="no-print" style={{ padding: "0 14px" }}>
+          <div style={{ fontSize: 12, color: C.sub, marginBottom: 8 }}>{storeName} の発注履歴</div>
+          {storeOrders.length === 0 && <div style={{ color: C.sub, fontSize: 14, textAlign: "center", padding: 40 }}>まだ発注履歴がありません</div>}
+          {storeOrders.map((o, i) => (
+            <div key={i} style={{ background: C.card, borderRadius: 12, padding: "11px 13px", border: `1px solid ${C.line}`, marginBottom: 7 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, alignItems: "center" }}>
+                <span style={{ fontWeight: 700 }}>{new Date(o.date).toLocaleDateString("ja-JP")}</span>
+                <span style={{ fontWeight: 800 }}>{yen(o.totalInc)} <span style={{ fontSize: 11, color: C.sub }}>税込</span></span>
+              </div>
+              <div style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>
+                {o.items.map((it) => `${it.name}×${it.qty}`).join("、")}
+              </div>
+              <button onClick={() => { if (window.confirm("この発注記録を削除しますか?")) setStoreOrders((os) => os.filter((_, x) => x !== i)); }}
+                style={{ marginTop: 6, border: "none", background: "transparent", color: DANGER, fontSize: 12, fontWeight: 600, padding: 0 }}>記録を削除</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 印刷用発注書 */}
+      <div className="print-area" style={{ padding: 40 }}>
+        <h2 style={{ borderBottom: "2px solid #000", paddingBottom: 8 }}>材料発注書</h2>
+        <div>発注日: {now.toLocaleDateString("ja-JP")}　株式会社Rita {storeName}</div>
+        {vendors.map((v) => {
+          const items = cartItems.filter((i) => i.vendorId === v.id);
+          if (items.length === 0) return null;
+          return (
+            <div key={v.id} style={{ marginTop: 18 }}>
+              <div style={{ fontWeight: "bold", fontSize: 15 }}>■ {v.name} 御中</div>
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 6, fontSize: 13 }}>
+                <thead><tr>
+                  <th style={{ border: "1px solid #999", padding: 5, textAlign: "left" }}>商品名</th>
+                  <th style={{ border: "1px solid #999", padding: 5 }}>数量</th>
+                  <th style={{ border: "1px solid #999", padding: 5, textAlign: "right" }}>税抜単価</th>
+                  <th style={{ border: "1px solid #999", padding: 5, textAlign: "right" }}>小計</th>
+                </tr></thead>
+                <tbody>{items.map((i) => (
+                  <tr key={i.id}>
+                    <td style={{ border: "1px solid #999", padding: 5 }}>{i.name}</td>
+                    <td style={{ border: "1px solid #999", padding: 5, textAlign: "center" }}>{i.qty}</td>
+                    <td style={{ border: "1px solid #999", padding: 5, textAlign: "right" }}>{yen(i.price)}</td>
+                    <td style={{ border: "1px solid #999", padding: 5, textAlign: "right" }}>{yen(i.price * i.qty)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          );
+        })}
+        <div style={{ textAlign: "right", marginTop: 14, fontSize: 15 }}>
+          税抜合計: {yen(cartEx)}<br />
+          <b>税込合計: {yen(cartInc)}(消費税10%)</b>
+        </div>
+      </div>
+
+      {toast && (
+        <div className="no-print" style={{ position: "fixed", bottom: 100, left: "50%", transform: "translateX(-50%)", background: C.ink, color: "#fff", padding: "10px 20px", borderRadius: 20, fontSize: 13, zIndex: 60 }}>{toast}</div>
+      )}
+
+      <div className="no-print" style={{ position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: 480, margin: "0 auto", background: C.card, borderTop: `1px solid ${C.line}`, display: "flex", zIndex: 50 }}>
+        {[["order", "発注"], ["budget", "予算"], ["master", "マスタ"], ["history", "履歴"]].map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)}
+            style={{ flex: 1, padding: "13px 0 18px", border: "none", background: "transparent", fontSize: 13, fontWeight: 700, color: tab === k ? ACCENT : C.sub, borderTop: tab === k ? `3px solid ${ACCENT}` : "3px solid transparent" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<RitaMaterialApp />);
+</script>
+</body>
+</html>
